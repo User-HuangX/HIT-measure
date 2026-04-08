@@ -1,0 +1,23 @@
+product-name = "HIT-measure"  # 应用显示名称
+version = "0.0.1"               # 应用版本号
+identifier = "com.tableandtable.app"  # 应用唯一标识符（macOS bundle ID / Android package name）
+
+[build]
+dev-url = "http://localhost:5173"  # Vite 开发服务器地址
+before-dev-command = "npm run dev"  # 开发模式前执行的命令（启动 Vite）
+frontend-dist = "./dist"   # 前端构建输出目录
+before-build-command = "npm run build"  # 生产构建前执行的命令
+
+
+[bundle]
+active = true      # 启用打包功能
+targets = "all"    # 打包所有平台格式（deb, AppImage, dmg, exe 等）
+
+[[app.windows]]
+title = "HIT-measure"  # 窗口标题
+width = 1400        # 初始宽度（像素）
+height = 900        # 初始高度（像素）
+minWidth = 1200     # 最小宽度
+minHeight = 700     # 最小高度
+resizable = true    # 允许调整大小
+fullscreen = false  # 不默认全屏
