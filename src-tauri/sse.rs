@@ -24,13 +24,11 @@ pub struct SseState {
 
 async fn events(State(state): State<SseState>) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let rx = state.tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|item| async move {
-        match item {
-            Ok(sample) => serde_json::to_string(&sample)
-                .ok()
-                .map(|json| Ok(Event::default().data(json))),
-            Err(_) => None,
-        }
+    let stream = BroadcastStream::new(rx).filter_map(|item| match item {
+        Ok(sample) => serde_json::to_string(&sample)
+            .ok()
+            .map(|json| Ok(Event::default().data(json))),
+        Err(_) => None,
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }

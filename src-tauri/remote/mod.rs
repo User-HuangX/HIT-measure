@@ -1,25 +1,33 @@
 pub mod mqtt_config;
 pub mod rtsp_config;
-use rumqttc::{AsyncClient,Event, Packet};
+use crate::data;
+use crate::dto::MeasureSample;
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use std::time::Duration as StdDuration;
-//获取mqtt数据流等待后续解析
-pub async fn init_mqtt() {
+use tokio::sync::broadcast;
 
-    // 创建 MQTT 客户端和连接，并启动新线程进行消息订阅
-    let (_, mut connection) = AsyncClient::new(mqtt_config::get_mqtt(), 10);
+/// MQTT 上行 → data 层解析 → 广播给 SSE。
+pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
+    let mqttoptions = mqtt_config::get_mqtt();
+    let (client, mut connection) = AsyncClient::new(mqttoptions, 10);
 
-    // 遍历并处理连接中的每个通知
+    if let Err(e) = client
+        .subscribe(data::MQTT_MEASURE_TOPIC, QoS::AtMostOnce)
+        .await
+    {
+        log::error!("mqtt subscribe {}: {:?}", data::MQTT_MEASURE_TOPIC, e);
+        return;
+    }
+
     loop {
         match connection.poll().await {
             Ok(notification) => {
                 if let Event::Incoming(Packet::Publish(publish)) = notification {
-                    // 这里处理二进制数据: publish.payload
-                    println!("Received payload size: {}", publish.payload.len());
-                    // 将数据发送到解码线程/管道
+                    data::ingest_mqtt_and_broadcast(&tx, &publish.payload);
                 }
             }
             Err(e) => {
-                println!("Error: {:?}", e);
+                log::warn!("mqtt connection: {:?}", e);
                 tokio::time::sleep(StdDuration::from_secs(1)).await;
             }
         }

@@ -1,13 +1,18 @@
+mod data;
 mod dto;
 mod remote;
+mod sse;
 
 #[tokio::main]
 async fn main(){
     // 初始化日志记录器
     pretty_env_logger::init();
 
-    // 创建 MQTT 客户端和连接，并启动新线程进行消息发布
-    tokio::spawn(remote::init_mqtt());
+    let (sample_tx, _) =
+        tokio::sync::broadcast::channel::<dto::MeasureSample>(data::SAMPLE_CHANNEL_CAPACITY);
+
+    tokio::spawn(sse::serve(sample_tx.clone()));
+    tokio::spawn(remote::init_mqtt(sample_tx));
     tokio::spawn(remote::init_rtsp());
 
     // 启动后端
