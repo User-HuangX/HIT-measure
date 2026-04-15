@@ -1,4 +1,5 @@
-//! 本地 HTTP SSE：将 [`crate::dto::MeasureSample`] 以 `data: <json>` 推送给前端。
+//! 本地 HTTP SSE：将 [`crate::dto::MeasureSample`] 以 `data: <json>` 推送给前端；
+//! 同端口提供 `/hls/` 静态目录（ffmpeg 生成的 HLS）与 `/mjpeg`（无 MSE 的 WebView 预览）。
 use axum::{
     extract::State,
     http::Method,
@@ -8,6 +9,7 @@ use axum::{
 };
 use crate::dto::MeasureSample;
 use crate::env::CONFIG;
+use crate::relay_hls;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -15,6 +17,7 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 
 #[derive(Clone)]
 pub struct SseState {
@@ -40,10 +43,13 @@ pub async fn serve(tx: broadcast::Sender<MeasureSample>) -> Result<(), std::io::
     let state = SseState { tx };
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET])
+        .allow_methods([Method::GET, Method::HEAD, Method::OPTIONS])
         .allow_headers(Any);
 
+    let hls_dir = relay_hls::hls_root();
     let app = Router::new()
+        .nest_service("/hls", ServeDir::new(hls_dir))
+        .route("/mjpeg", get(crate::mjpeg::mjpeg_stream))
         .route("/events", get(events))
         .route("/health", get(health))
         .with_state(state)

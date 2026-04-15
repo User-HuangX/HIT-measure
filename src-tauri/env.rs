@@ -20,6 +20,12 @@ pub struct AppConfig {
     pub xiu_http_flv_port: usize,
     pub xiu_hls_port: usize,
     pub xiu_log_level: String,
+
+    /// 为 true 时允许 RTSP 转码（HLS 文件与/或 `/mjpeg` 按需拉流）。
+    pub rtsp_relay_enabled: bool,
+    /// 为 true 且 `rtsp_relay_enabled` 时，写 `var/hls/` 供 hls.js；纯 WebView 无 MSE 时可关，只保留 `/mjpeg`。
+    pub rtsp_relay_write_hls: bool,
+    pub rtsp_relay_source: String,
 }
 
 fn var_u16(key: &str, default: u16) -> u16 {
@@ -54,6 +60,13 @@ fn var_string(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+fn var_bool(key: &str, default: bool) -> bool {
+    match std::env::var(key) {
+        Ok(s) => matches!(s.to_lowercase().as_str(), "1" | "true" | "yes"),
+        Err(_) => default,
+    }
+}
+
 impl AppConfig {
     fn from_env() -> Self {
         Self {
@@ -74,6 +87,13 @@ impl AppConfig {
             xiu_http_flv_port: var_usize_ports("XIU_HTTP_FLV_PORT", 8080),
             xiu_hls_port: var_usize_ports("XIU_HLS_PORT", 8081),
             xiu_log_level: var_string("XIU_LOG_LEVEL", "info"),
+
+            rtsp_relay_enabled: var_bool("RTSP_RELAY_ENABLED", false),
+            rtsp_relay_write_hls: var_bool("RTSP_RELAY_WRITE_HLS", true),
+            rtsp_relay_source: var_string(
+                "RTSP_RELAY_SOURCE",
+                "rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mp4",
+            ),
         }
     }
 }

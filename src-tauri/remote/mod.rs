@@ -31,8 +31,8 @@ pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
         }
     }
 }
-//直接拉取rtsp流
-pub async fn init_rtsp() -> Result<(),String> {
+
+pub async fn init_rtsp() -> Result<(), String> {
     rtsp_config::manual_subscribe_rtsp().await.map_err(|e| e.to_string())?;
     Ok(())
 }

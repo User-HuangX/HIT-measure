@@ -1,6 +1,8 @@
 mod data;
 mod dto;
 mod env;
+mod mjpeg;
+mod relay_hls;
 mod remote;
 mod sse;
 
@@ -14,6 +16,7 @@ async fn main(){
         env::CONFIG.sample_broadcast_capacity,
     );
 
+    relay_hls::spawn_rtsp_to_hls_relay();
     tokio::spawn(sse::serve(sample_tx.clone()));
     tokio::spawn(remote::init_mqtt(sample_tx));
     tokio::spawn(remote::init_rtsp());
@@ -21,9 +24,6 @@ async fn main(){
     // 启动后端
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![
-
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

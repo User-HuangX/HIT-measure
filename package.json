@@ -7,12 +7,14 @@
         "build": "vite build",
         "preview": "vite preview",
         "tauri": "tauri",
-        "tauri:dev": "node scripts/tauri-dev.mjs dev"
+        "tauri:dev": "node scripts/tauri-dev.mjs dev",
+        "test:mqtt": "bash scripts/test-mqtt-publish.sh"
     },
     "dependencies": {
         "@tauri-apps/api": "^2.10.1",
         "@tauri-apps/cli": "^2.10.1",
         "axios": "^1.6.0",
+        "hls.js": "^1.6.16",
         "package.json": "^2.0.1",
         "vue": "^3.4.0"
     },

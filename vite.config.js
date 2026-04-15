@@ -7,7 +7,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, root, '')
   const port = Number(env.DEV_SERVER_PORT || 5180)
   const ssePort = env.SSE_PORT || '5888'
-  const sseUrl = `http://127.0.0.1:${ssePort}/events`
+  const base = `http://127.0.0.1:${ssePort}`
+  const sseUrl = `${base}/events`
+  const hlsUrl = `${base}/hls/index.m3u8`
 
   return {
     plugins: [vue()],
@@ -17,6 +19,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       'import.meta.env.VITE_SSE_URL': JSON.stringify(sseUrl),
+      'import.meta.env.VITE_HLS_URL': JSON.stringify(hlsUrl),
     },
   }
 })
