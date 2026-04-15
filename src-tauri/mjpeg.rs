@@ -1,25 +1,23 @@
-//! RTSP → MJPEG（multipart），供无 MSE 的 WebView 用 `<img src="/mjpeg">` 预览。
-//! 与 HLS 并行：HLS 仍给支持 hls.js / Safari 的环境；此处不依赖 `MediaSource`。
+//! RTSP → 共享 JPEG 缓冲，供无 MSE 的 WebView 通过 `GET /mjpeg/last.jpg` 定时刷新预览。
+//! WebKitGTK 对 `multipart/x-mixed-replace` 的 `<img>` 支持不可靠，故不用长连接 multipart。
 
 use crate::env::CONFIG;
 use axum::body::Body;
 use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use bytes::Bytes;
 use std::io::{self, ErrorKind};
+use std::sync::Once;
+use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
-
-const MJPEG_BOUNDARY: &str = "mjpegboundary";
+use tokio::sync::RwLock;
+use once_cell::sync::Lazy;
 
 fn find_jpeg_soi(buf: &[u8]) -> Option<usize> {
     buf.windows(2).position(|w| w == [0xFF, 0xD8])
 }
 
-/// 假定 `buf` 以 FFD8 开头，返回整帧长度（含结尾 FFD9）。
 fn jpeg_len_from_soi(buf: &[u8]) -> Option<usize> {
     if buf.len() < 4 {
         return None;
@@ -59,7 +57,6 @@ async fn read_next_jpeg<R: tokio::io::AsyncRead + Unpin>(
                 }
             }
         } else if buf.len() > 65536 {
-            // 避免垃圾数据撑爆缓冲；保留末字节以免截断 FFD8
             let keep = buf.len().saturating_sub(1);
             buf.drain(..keep);
         }
@@ -72,19 +69,21 @@ async fn read_next_jpeg<R: tokio::io::AsyncRead + Unpin>(
     }
 }
 
-pub async fn mjpeg_stream() -> impl IntoResponse {
+static LATEST_JPEG: Lazy<RwLock<Vec<u8>>> = Lazy::new(|| RwLock::new(Vec::new()));
+static FEED_ONCE: Once = Once::new();
+
+fn start_mjpeg_feed() {
+    FEED_ONCE.call_once(|| {
+        tokio::spawn(mjpeg_ffmpeg_loop());
+    });
+}
+
+async fn mjpeg_ffmpeg_loop() {
     if !CONFIG.rtsp_relay_enabled {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "RTSP relay disabled (set RTSP_RELAY_ENABLED=true)",
-        )
-            .into_response();
+        return;
     }
-
     let source = CONFIG.rtsp_relay_source.clone();
-    let (tx, rx) = mpsc::channel::<Result<Bytes, std::convert::Infallible>>(2);
-
-    tokio::spawn(async move {
+    loop {
         let mut cmd = Command::new("ffmpeg");
         cmd.kill_on_drop(true)
             .stdin(std::process::Stdio::null())
@@ -110,51 +109,64 @@ pub async fn mjpeg_stream() -> impl IntoResponse {
             Ok(c) => c,
             Err(e) => {
                 log::error!("mjpeg ffmpeg spawn: {} (is ffmpeg installed?)", e);
-                return;
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
         };
 
         let mut stdout = match child.stdout.take() {
             Some(s) => s,
-            None => return,
+            None => {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
         };
 
         let mut buf = Vec::new();
         loop {
             match read_next_jpeg(&mut stdout, &mut buf).await {
                 Ok(Some(frame)) => {
-                    use std::fmt::Write;
-                    let mut head = String::new();
-                    let _ = write!(
-                        &mut head,
-                        "--{}\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
-                        MJPEG_BOUNDARY,
-                        frame.len()
-                    );
-                    let mut chunk = Vec::with_capacity(head.len() + frame.len() + 2);
-                    chunk.extend_from_slice(head.as_bytes());
-                    chunk.extend_from_slice(&frame);
-                    chunk.extend_from_slice(b"\r\n");
-                    if tx.send(Ok(Bytes::from(chunk))).await.is_err() {
-                        break;
-                    }
+                    let mut w = LATEST_JPEG.write().await;
+                    *w = frame;
                 }
-                Ok(None) => break,
+                Ok(None) => {
+                    log::warn!("mjpeg ffmpeg stdout closed; restarting");
+                    break;
+                }
                 Err(e) => {
                     log::warn!("mjpeg frame read: {}", e);
                     break;
                 }
             }
         }
-    });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
 
-    let stream = ReceiverStream::new(rx);
-    Response::builder()
-        .header(
-            header::CONTENT_TYPE,
-            format!("multipart/x-mixed-replace; boundary={}", MJPEG_BOUNDARY),
+pub async fn mjpeg_last_jpeg() -> impl IntoResponse {
+    if !CONFIG.rtsp_relay_enabled {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "RTSP relay disabled (set RTSP_RELAY_ENABLED=true)",
         )
-        .header(header::CACHE_CONTROL, "no-cache, no-store")
-        .body(Body::from_stream(stream))
-        .expect("valid response")
+            .into_response();
+    }
+
+    start_mjpeg_feed();
+
+    let bytes = LATEST_JPEG.read().await.clone();
+    if bytes.is_empty() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "MJPEG warming up (wait for ffmpeg / first frame)",
+        )
+            .into_response();
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/jpeg")
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

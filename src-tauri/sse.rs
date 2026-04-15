@@ -1,5 +1,5 @@
 //! 本地 HTTP SSE：将 [`crate::dto::MeasureSample`] 以 `data: <json>` 推送给前端；
-//! 同端口提供 `/hls/` 静态目录（ffmpeg 生成的 HLS）与 `/mjpeg`（无 MSE 的 WebView 预览）。
+//! 同端口提供 `/hls/` 静态目录（ffmpeg 生成的 HLS）与 `/mjpeg/last.jpg`（无 MSE 的 WebView 轮询预览）。
 use axum::{
     extract::State,
     http::Method,
@@ -49,7 +49,7 @@ pub async fn serve(tx: broadcast::Sender<MeasureSample>) -> Result<(), std::io::
     let hls_dir = relay_hls::hls_root();
     let app = Router::new()
         .nest_service("/hls", ServeDir::new(hls_dir))
-        .route("/mjpeg", get(crate::mjpeg::mjpeg_stream))
+        .route("/mjpeg/last.jpg", get(crate::mjpeg::mjpeg_last_jpeg))
         .route("/events", get(events))
         .route("/health", get(health))
         .with_state(state)

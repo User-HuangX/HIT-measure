@@ -15,8 +15,9 @@
             <img
                 v-show="streamMode === 'mjpeg'"
                 class="hls-video mjpeg-preview"
-                :src="mjpegUrl"
+                :src="mjpegSrc"
                 alt="MJPEG 预览"
+                @error="onMjpegImgError"
             />
             <p v-if="hlsError" class="err">{{ hlsError }}</p>
         </section>
@@ -38,30 +39,61 @@
 
 <script setup>
 import Hls from 'hls.js'
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-const sseUrl = import.meta.env.VITE_SSE_URL || 'http://127.0.0.1:5888/events'
-const hlsUrl =
-    import.meta.env.VITE_HLS_URL || 'http://127.0.0.1:5888/hls/index.m3u8'
-const mjpegUrl =
-    import.meta.env.VITE_MJPEG_URL || 'http://127.0.0.1:5888/mjpeg'
+const streamPort = import.meta.env.VITE_STREAM_PORT || '5888'
 
-/** @type {import('vue').Ref<'idle' | 'hls' | 'mjpeg'>} */
-const streamMode = ref('idle')
+function streamOrigin() {
+    const override = import.meta.env.VITE_STREAM_API_ORIGIN
+    if (override) {
+        return String(override).replace(/\/$/, '')
+    }
+    if (typeof window === 'undefined') {
+        return `http://127.0.0.1:${streamPort}`
+    }
+    return `${window.location.protocol}//${window.location.hostname}:${streamPort}`
+}
+
+const sseUrl = `${streamOrigin()}/events`
+const hlsUrl = `${streamOrigin()}/hls/index.m3u8`
+const mjpegSnapUrl = `${streamOrigin()}/mjpeg/last.jpg`
+
+function initialStreamMode() {
+    if (Hls.isSupported()) return 'hls'
+    const v = document.createElement('video')
+    if (v.canPlayType('application/vnd.apple.mpegurl')) return 'hls'
+    return 'mjpeg'
+}
+
+/** @type {import('vue').Ref<'hls' | 'mjpeg'>} */
+const streamMode = ref(initialStreamMode())
 
 const hlsVideoEl = ref(null)
 const hlsError = ref('')
+const mjpegSrc = ref(`${mjpegSnapUrl}?t=0`)
 let hlsPlayer = null
-
-const activeStreamUrl = computed(() =>
-    streamMode.value === 'mjpeg' ? mjpegUrl : hlsUrl,
-)
+let mjpegTimer = null
 
 const sample = ref(null)
 const rawPayload = ref('')
 const parseError = ref('')
 const sseError = ref('')
 let es = null
+
+function onMjpegImgError() {
+    if (streamMode.value !== 'mjpeg') return
+    hlsError.value = `MJPEG 无法加载（${mjpegSnapUrl}）。若刚启动请稍等；并确认 RTSP_RELAY_ENABLED、ffmpeg 与 RTSP 地址。`
+}
+
+function startMjpegPoll() {
+    clearInterval(mjpegTimer)
+    hlsError.value = ''
+    const tick = () => {
+        mjpegSrc.value = `${mjpegSnapUrl}?t=${Date.now()}`
+    }
+    tick()
+    mjpegTimer = setInterval(tick, 120)
+}
 
 function tryParseMeasure(text) {
     rawPayload.value = text
@@ -79,7 +111,8 @@ function tryParseMeasure(text) {
                 photoelectric: o.photoelectric,
             }
         } else {
-            parseError.value = 'JSON 字段不完整（需要 temperature / humidity / photoelectric 数字）'
+            parseError.value =
+                'JSON 字段不完整（需要 temperature / humidity / photoelectric 数字）'
             sample.value = null
         }
     } catch {
@@ -124,13 +157,20 @@ onMounted(() => {
         sseError.value = `SSE 连接失败或已断开（${sseUrl}）`
     }
 
-    nextTick(() => setupHls())
+    nextTick(() => {
+        setupHls()
+        if (streamMode.value === 'mjpeg') {
+            startMjpegPoll()
+        }
+    })
 })
 
 onUnmounted(() => {
     es?.close()
     hlsPlayer?.destroy()
     hlsPlayer = null
+    clearInterval(mjpegTimer)
+    mjpegTimer = null
 })
 </script>
 
