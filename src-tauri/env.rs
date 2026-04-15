@@ -11,6 +11,12 @@ pub struct AppConfig {
 
     pub rtsp_relay_enabled: bool,
     pub rtsp_relay_source: String,
+
+    /// `postgresql://USER:PASSWORD@HOST:PORT/DATABASE`（见 `.env` 中 `DATABASE_URL`）。
+    pub database_url: String,
+
+    /// 将最近一次 MQTT 样本写入数据库的间隔（秒）。
+    pub measure_persist_interval_secs: u64,
 }
 
 fn var_u16(key: &str, default: u16) -> u16 {
@@ -49,6 +55,9 @@ impl AppConfig {
 
             rtsp_relay_enabled: var_bool("RTSP_RELAY_ENABLED", false),
             rtsp_relay_source: var_string("RTSP_RELAY_SOURCE", ""),
+
+            database_url: var_string("DATABASE_URL", ""),
+            measure_persist_interval_secs: var_u64("MEASURE_PERSIST_INTERVAL_SECS", 5),
         }
     }
 }

@@ -21,7 +21,7 @@ pub async fn run_mqtt(app: AppHandle) {
         match connection.poll().await {
             Ok(notification) => {
                 if let Event::Incoming(Packet::Publish(publish)) = notification {
-                    data::emit_measure_from_mqtt(&app, &publish.payload);
+                    data::emit_measure_from_mqtt(&app, &publish.payload).await;
                 }
             }
             Err(e) => {

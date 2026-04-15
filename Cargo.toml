@@ -16,6 +16,8 @@ tokio = { version = "1", features = ["full"] }
 rumqttc = "0.24"
 dotenvy = "0.15"
 once_cell = "1.21.4"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "tls-native-tls", "chrono"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [[bin]]
 name = "measure"

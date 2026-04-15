@@ -1,4 +1,5 @@
-//! MQTT 载荷解析为 [`crate::dto::MeasureSample`]，再经 Tauri 事件推到前端。
+//! MQTT 载荷解析为 [`crate::dto::MeasureSample`]，写 [`crate::db::LAST_SAMPLE`]，再 `emit` 到前端。
+use crate::db;
 use crate::dto::MeasureSample;
 use log::debug;
 use tauri::{AppHandle, Emitter};
@@ -23,10 +24,11 @@ pub fn parse_measure_sample(payload: &[u8]) -> Option<MeasureSample> {
     })
 }
 
-pub fn emit_measure_from_mqtt(app: &AppHandle, payload: &[u8]) {
+pub async fn emit_measure_from_mqtt(app: &AppHandle, payload: &[u8]) {
     let Some(sample) = parse_measure_sample(payload) else {
         debug!("drop mqtt payload: need CSV `t,h,p`");
         return;
     };
+    *db::LAST_SAMPLE.write().await = Some(sample);
     let _ = app.emit("measure", sample);
 }

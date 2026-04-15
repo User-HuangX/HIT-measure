@@ -1,4 +1,5 @@
 mod data;
+mod db;
 mod dto;
 mod env;
 mod mjpeg;
@@ -35,6 +36,12 @@ async fn main() {
                 log::warn!("RTSP_RELAY_ENABLED 但 RTSP_RELAY_SOURCE 为空，已跳过预览拉流");
             }
             tokio::spawn(async move {
+                match db::init_pool().await {
+                    Ok(pool) => {
+                        db::spawn_periodic_insert(pool);
+                    }
+                    Err(e) => log::error!("postgres: {}", e),
+                }
                 remote::run_mqtt(handle).await;
             });
             Ok(())
