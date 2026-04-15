@@ -1,18 +1,9 @@
-//! 数据层：把 remote（MQTT）载荷转成 [`crate::dto::MeasureSample`]，
-//! 再写入广播通道，由 [`crate::sse`] 推给前端。
-
+//! MQTT 载荷解析为 [`crate::dto::MeasureSample`]，再经 Tauri 事件推到前端。
 use crate::dto::MeasureSample;
-use crate::env::CONFIG;
 use log::debug;
-use tokio::sync::broadcast;
+use tauri::{AppHandle, Emitter};
 
-/// 与 `remote` 里订阅的 MQTT 主题一致，来自 `.env` 的 `MQTT_MEASURE_TOPIC`。
-pub fn mqtt_measure_topic() -> String {
-    CONFIG.mqtt_measure_topic.clone()
-}
-
-/// MQTT 上行格式：**一行文本** `温度,湿度,光电`（三个小数，逗号分隔，可含首尾空白）。
-/// 不再使用 JSON。
+/// 一行 CSV：`温度,湿度,光电`（三个小数，逗号分隔）。
 pub fn parse_measure_sample(payload: &[u8]) -> Option<MeasureSample> {
     let s = std::str::from_utf8(payload).ok()?.trim();
     if s.is_empty() {
@@ -32,12 +23,10 @@ pub fn parse_measure_sample(payload: &[u8]) -> Option<MeasureSample> {
     })
 }
 
-pub fn ingest_mqtt_and_broadcast(tx: &broadcast::Sender<MeasureSample>, payload: &[u8]) {
+pub fn emit_measure_from_mqtt(app: &AppHandle, payload: &[u8]) {
     let Some(sample) = parse_measure_sample(payload) else {
         debug!("drop mqtt payload: need CSV `t,h,p`");
         return;
     };
-    if tx.send(sample).is_err() {
-        debug!("sample not broadcast (no active receivers)");
-    }
+    let _ = app.emit("measure", sample);
 }

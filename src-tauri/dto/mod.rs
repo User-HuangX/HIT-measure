@@ -1,5 +1,7 @@
-//! 测量数据 DTO：与 MQTT / SSE 载荷（CSV）一一对应。
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+//! 测量三值（与 MQTT CSV 一致）。
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
 pub struct MeasureSample {
     pub temperature: f64,
     pub humidity: f64,

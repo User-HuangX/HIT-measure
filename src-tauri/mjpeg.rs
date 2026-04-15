@@ -1,5 +1,4 @@
-//! RTSP → `var/stream/last.jpg`，供前端通过 Tauri Asset Protocol（`convertFileSrc`）轮询预览。
-//! 不再提供 HTTP 拉流。
+//! 在线 RTSP → 本机 ffmpeg → `var/stream/last.jpg`，前端用 Asset Protocol 轮询预览。
 
 use crate::env::CONFIG;
 use std::io::{self, ErrorKind};
@@ -15,6 +14,25 @@ pub fn stream_root() -> PathBuf {
 
 pub fn last_jpeg_path() -> PathBuf {
     stream_root().join("last.jpg")
+}
+
+/// 编译时嵌入的 2×2 灰块 JPEG；在 ffmpeg 写出首帧前写入磁盘，避免 Asset Protocol 报「文件不存在」。
+const LAST_PLACEHOLDER_JPEG: &[u8] = include_bytes!("assets/last_placeholder.jpg");
+
+/// 确保 `var/stream/last.jpg` 存在（尚无视频帧时为占位图）。
+pub fn ensure_last_jpeg_placeholder() {
+    if let Err(e) = try_ensure_last_jpeg_placeholder() {
+        log::warn!("ensure last.jpg placeholder: {}", e);
+    }
+}
+
+fn try_ensure_last_jpeg_placeholder() -> std::io::Result<()> {
+    std::fs::create_dir_all(stream_root())?;
+    let path = last_jpeg_path();
+    if std::fs::metadata(&path).is_err() {
+        std::fs::write(&path, LAST_PLACEHOLDER_JPEG)?;
+    }
+    Ok(())
 }
 
 fn find_jpeg_soi(buf: &[u8]) -> Option<usize> {
@@ -76,6 +94,7 @@ static FEED_ONCE: Once = Once::new();
 
 pub fn start_mjpeg_feed() {
     FEED_ONCE.call_once(|| {
+        ensure_last_jpeg_placeholder();
         tokio::spawn(mjpeg_ffmpeg_loop());
     });
 }

@@ -1,17 +1,17 @@
 pub mod mqtt_config;
-pub mod rtsp_config;
+
 use crate::data;
-use crate::dto::MeasureSample;
+use crate::env::CONFIG;
 use rumqttc::{AsyncClient, Event, Packet, QoS};
 use std::time::Duration as StdDuration;
-use tokio::sync::broadcast;
+use tauri::AppHandle;
 
-/// MQTT 上行 → data 层解析 → 广播给 SSE。
-pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
+/// MQTT（仅订阅测量主题）→ 解析 → `emit("measure", …)`。
+pub async fn run_mqtt(app: AppHandle) {
     let mqttoptions = mqtt_config::get_mqtt();
     let (client, mut connection) = AsyncClient::new(mqttoptions, 10);
 
-    let topic = data::mqtt_measure_topic();
+    let topic = CONFIG.mqtt_measure_topic.clone();
     if let Err(e) = client.subscribe(topic.clone(), QoS::AtMostOnce).await {
         log::error!("mqtt subscribe {}: {:?}", topic, e);
         return;
@@ -21,7 +21,7 @@ pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
         match connection.poll().await {
             Ok(notification) => {
                 if let Event::Incoming(Packet::Publish(publish)) = notification {
-                    data::ingest_mqtt_and_broadcast(&tx, &publish.payload);
+                    data::emit_measure_from_mqtt(&app, &publish.payload);
                 }
             }
             Err(e) => {
@@ -30,9 +30,4 @@ pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
             }
         }
     }
-}
-
-pub async fn init_rtsp() -> Result<(), String> {
-    rtsp_config::manual_subscribe_rtsp().await.map_err(|e| e.to_string())?;
-    Ok(())
 }

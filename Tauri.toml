@@ -14,11 +14,11 @@ before-build-command = "npm run build"  # 生产构建前执行的命令
 active = true      # 启用打包功能
 targets = "all"    # 打包所有平台格式（deb, AppImage, dmg, exe 等）
 
-# SSE 仍走本机 HTTP；HLS/MJPEG 文件经 Asset Protocol。开发时保留 Vite HMR 的 ws。
+# MJPEG 预览走 Asset；开发保留 Vite ws
 [app.security]
 asset-protocol = { enable = true, scope = ["**"] }
-dev-csp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
-csp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:*; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
+dev-csp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://localhost:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
+csp = "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
 
 [[app.windows]]
 title = "HIT-measure"  # 窗口标题

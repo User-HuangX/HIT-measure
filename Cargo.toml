@@ -7,39 +7,16 @@ edition = "2024"
 tauri-build = { version = "2.0.0", features = [ "config-toml" ] }
 
 [dependencies]
-# Tauri 桌面应用框架
 tauri = { version = "2.0.0", features = [ "config-toml", "protocol-asset" ] }
-tauri-plugin-shell = "2"
-serde = { version = "1.0", features = ["derive"] }  # invoke 返回值等
+serde = { version = "1.0", features = ["derive"] }
 
-# 本地 SSE（推送到前端）
-axum = "0.7"
-tower = "0.5"
-tower-http = { version = "0.5", features = ["cors"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-
-# 日志
 log = "0.4"
 pretty_env_logger = "0.4"
-
-# 异步运行时，相当于Java的CompletableFuture
 tokio = { version = "1", features = ["full"] }
-
-# MQTT 客户端
 rumqttc = "0.24"
-
-# 数据库驱动
-sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
-
-# 工具
 dotenvy = "0.15"
-anyhow = "1"
-urlencoding = "2.1" #用户输入特殊字符转义用的
-chrono = { version = "0.4", features = ["serde"] }  # 时间序列化
-rmp-serde = "1.1"  # MessagePack 序列化为二进制优化性能
-crc32fast = "1.3"  # CRC32 校验
 once_cell = "1.21.4"
-xiu = "0.13.0"  #完整的xiu视频流客户端，用于解析和播放视频流
+
 [[bin]]
 name = "measure"
 path = "src-tauri/main.rs"
