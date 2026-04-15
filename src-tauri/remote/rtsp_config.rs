@@ -1,16 +1,18 @@
-use xiu::service::Service;
-use xiu::config::Config;
+use crate::env::CONFIG;
 use anyhow::Result;
-//用的http的形式前端直接订阅
-pub async fn manual_subscribe_rtsp()-> Result<()>{
- // 你可以自己构造 Config，或用 config::load(...) 读取 toml/json
+use xiu::config::Config;
+use xiu::service::Service;
+
+/// 用的 http 形式前端直接订阅；端口由 `.env` 中 `XIU_*` 配置。
+pub async fn manual_subscribe_rtsp() -> Result<()> {
+    let c = &*CONFIG;
     let cfg = Config::new(
-        1935, // rtmp
-        5544, // rtsp
-        0,    // webrtc
-        8080, // httpflv
-        8081, // hls
-        "info".to_string(),
+        c.xiu_rtmp_port,
+        c.xiu_rtsp_port,
+        c.xiu_webrtc_port,
+        c.xiu_http_flv_port,
+        c.xiu_hls_port,
+        c.xiu_log_level.clone(),
     );
     let mut service = Service::new(cfg);
     service.run().await?;

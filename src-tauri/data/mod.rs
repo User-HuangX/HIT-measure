@@ -2,14 +2,14 @@
 //! 再写入广播通道，由 [`crate::sse`] 主动推给前端。
 
 use crate::dto::MeasureSample;
+use crate::env::CONFIG;
 use log::debug;
 use tokio::sync::broadcast;
 
-/// 与 `remote` 里订阅的 MQTT 主题一致（测量 JSON 上行）。
-pub const MQTT_MEASURE_TOPIC: &str = "hit/measure/sample";
-
-/// 广播缓冲容量（慢消费端可能丢最旧事件，按需调大）。
-pub const SAMPLE_CHANNEL_CAPACITY: usize = 256;
+/// 与 `remote` 里订阅的 MQTT 主题一致（测量 JSON 上行），来自 `.env` 的 `MQTT_MEASURE_TOPIC`。
+pub fn mqtt_measure_topic() -> String {
+    CONFIG.mqtt_measure_topic.clone()
+}
 
 /// 解析 MQTT payload → DTO。默认期望 JSON：`{"temperature":f64,"humidity":f64,"photoelectric":f64}`。
 pub fn parse_measure_sample(payload: &[u8]) -> Option<MeasureSample> {

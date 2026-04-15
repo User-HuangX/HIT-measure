@@ -1,15 +1,18 @@
 mod data;
 mod dto;
+mod env;
 mod remote;
 mod sse;
 
 #[tokio::main]
 async fn main(){
+    env::init();
     // 初始化日志记录器
     pretty_env_logger::init();
 
-    let (sample_tx, _) =
-        tokio::sync::broadcast::channel::<dto::MeasureSample>(data::SAMPLE_CHANNEL_CAPACITY);
+    let (sample_tx, _) = tokio::sync::broadcast::channel::<dto::MeasureSample>(
+        env::CONFIG.sample_broadcast_capacity,
+    );
 
     tokio::spawn(sse::serve(sample_tx.clone()));
     tokio::spawn(remote::init_mqtt(sample_tx));

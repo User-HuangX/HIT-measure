@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use crate::dto::MeasureSample;
+use crate::env::CONFIG;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -14,8 +15,6 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::cors::{Any, CorsLayer};
-
-pub const SSE_PORT: u16 = 5888;
 
 #[derive(Clone)]
 pub struct SseState {
@@ -50,8 +49,9 @@ pub async fn serve(tx: broadcast::Sender<MeasureSample>) -> Result<(), std::io::
         .with_state(state)
         .layer(cors);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], SSE_PORT));
+    let port = CONFIG.sse_port;
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    log::info!("SSE listening on http://127.0.0.1:{}/events", SSE_PORT);
+    log::info!("SSE listening on http://127.0.0.1:{}/events", port);
     axum::serve(listener, app).await
 }

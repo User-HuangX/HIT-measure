@@ -11,11 +11,9 @@ pub async fn init_mqtt(tx: broadcast::Sender<MeasureSample>) {
     let mqttoptions = mqtt_config::get_mqtt();
     let (client, mut connection) = AsyncClient::new(mqttoptions, 10);
 
-    if let Err(e) = client
-        .subscribe(data::MQTT_MEASURE_TOPIC, QoS::AtMostOnce)
-        .await
-    {
-        log::error!("mqtt subscribe {}: {:?}", data::MQTT_MEASURE_TOPIC, e);
+    let topic = data::mqtt_measure_topic();
+    if let Err(e) = client.subscribe(topic.clone(), QoS::AtMostOnce).await {
+        log::error!("mqtt subscribe {}: {:?}", topic, e);
         return;
     }
 

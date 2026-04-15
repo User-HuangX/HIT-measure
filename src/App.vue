@@ -10,7 +10,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 
-const sseUrl = 'http://127.0.0.1:5888/events'
+const sseUrl = import.meta.env.VITE_SSE_URL || 'http://127.0.0.1:5888/events'
 const lastJson = ref('')
 const sseError = ref('')
 let es = null
@@ -22,7 +22,7 @@ onMounted(() => {
         sseError.value = ''
     }
     es.onerror = () => {
-        sseError.value = 'SSE 连接失败或已断开（请确认后端已启动且端口 5888 可用）'
+        sseError.value = `SSE 连接失败或已断开（${sseUrl}）`
     }
 })
 

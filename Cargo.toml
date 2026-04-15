@@ -33,6 +33,7 @@ rumqttc = "0.24"
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
 
 # 工具
+dotenvy = "0.15"
 anyhow = "1"
 urlencoding = "2.1" #用户输入特殊字符转义用的
 chrono = { version = "0.4", features = ["serde"] }  # 时间序列化
