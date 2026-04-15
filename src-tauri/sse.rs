@@ -1,5 +1,4 @@
-//! 本地 HTTP SSE：将 [`crate::dto::MeasureSample`] 以 `data: <json>` 推送给前端；
-//! 同端口提供 `/hls/` 静态目录（ffmpeg 生成的 HLS）与 `/mjpeg/last.jpg`（无 MSE 的 WebView 轮询预览）。
+//! 本地 HTTP SSE：将 [`crate::dto::MeasureSample`] 以 CSV 文本 `温度,湿度,光电` 推送（与 MQTT 一致）。
 use axum::{
     extract::State,
     http::Method,
@@ -9,7 +8,6 @@ use axum::{
 };
 use crate::dto::MeasureSample;
 use crate::env::CONFIG;
-use crate::relay_hls;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -17,19 +15,23 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
 
 #[derive(Clone)]
 pub struct SseState {
     pub tx: broadcast::Sender<MeasureSample>,
 }
 
+fn sample_to_csv(s: &MeasureSample) -> String {
+    format!(
+        "{},{},{}",
+        s.temperature, s.humidity, s.photoelectric
+    )
+}
+
 async fn events(State(state): State<SseState>) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let rx = state.tx.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|item| match item {
-        Ok(sample) => serde_json::to_string(&sample)
-            .ok()
-            .map(|json| Ok(Event::default().data(json))),
+        Ok(sample) => Some(Ok(Event::default().data(sample_to_csv(&sample)))),
         Err(_) => None,
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
@@ -46,10 +48,7 @@ pub async fn serve(tx: broadcast::Sender<MeasureSample>) -> Result<(), std::io::
         .allow_methods([Method::GET, Method::HEAD, Method::OPTIONS])
         .allow_headers(Any);
 
-    let hls_dir = relay_hls::hls_root();
     let app = Router::new()
-        .nest_service("/hls", ServeDir::new(hls_dir))
-        .route("/mjpeg/last.jpg", get(crate::mjpeg::mjpeg_last_jpeg))
         .route("/events", get(events))
         .route("/health", get(health))
         .with_state(state)

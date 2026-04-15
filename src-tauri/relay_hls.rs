@@ -1,4 +1,4 @@
-//! 用本机 `ffmpeg` 将 RTSP 转为 HLS 文件，由 `sse` 同端口静态目录 `/hls/` 提供，供浏览器 `hls.js` 播放。
+//! 用本机 `ffmpeg` 将 RTSP 转为 `var/hls/` 下 HLS 文件，前端经 Tauri Asset Protocol + `convertFileSrc` 播放。
 use crate::env::CONFIG;
 use std::path::PathBuf;
 
@@ -13,7 +13,7 @@ pub fn spawn_rtsp_to_hls_relay() {
         return;
     }
     if !CONFIG.rtsp_relay_write_hls {
-        log::info!("RTSP→HLS files skipped (RTSP_RELAY_WRITE_HLS=false); use /mjpeg if needed");
+        log::info!("RTSP→HLS files skipped (RTSP_RELAY_WRITE_HLS=false); use var/stream/last.jpg + Asset if needed");
         return;
     }
 

@@ -4,22 +4,27 @@
 
         <section class="card">
             <h2>无人机视角</h2>
-            <video
-                v-show="streamMode === 'hls'"
-                ref="hlsVideoEl"
-                class="hls-video"
-                controls
-                playsinline
-                muted
-            />
-            <img
-                v-show="streamMode === 'mjpeg'"
-                class="hls-video mjpeg-preview"
-                :src="mjpegSrc"
-                alt="MJPEG 预览"
-                @error="onMjpegImgError"
-            />
-            <p v-if="hlsError" class="err">{{ hlsError }}</p>
+            <p v-if="!tauriEnv" class="err">
+                请在 Tauri 窗口中运行（HLS / MJPEG 使用 Asset Protocol 读本地文件）。
+            </p>
+            <template v-else>
+                <video
+                    v-show="streamMode === 'hls'"
+                    ref="hlsVideoEl"
+                    class="hls-video"
+                    controls
+                    playsinline
+                    muted
+                />
+                <img
+                    v-show="streamMode === 'mjpeg'"
+                    class="hls-video mjpeg-preview"
+                    :src="mjpegSrc"
+                    alt="MJPEG 预览"
+                    @error="onMjpegImgError"
+                />
+                <p v-if="hlsError" class="err">{{ hlsError }}</p>
+            </template>
         </section>
 
         <section class="card">
@@ -39,6 +44,7 @@
 
 <script setup>
 import Hls from 'hls.js'
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 const streamPort = import.meta.env.VITE_STREAM_PORT || '5888'
@@ -55,8 +61,10 @@ function streamOrigin() {
 }
 
 const sseUrl = `${streamOrigin()}/events`
-const hlsUrl = `${streamOrigin()}/hls/index.m3u8`
-const mjpegSnapUrl = `${streamOrigin()}/mjpeg/last.jpg`
+
+const tauriEnv = ref(false)
+const hlsUrl = ref('')
+const mjpegSnapUrl = ref('')
 
 function initialStreamMode() {
     if (Hls.isSupported()) return 'hls'
@@ -70,7 +78,7 @@ const streamMode = ref(initialStreamMode())
 
 const hlsVideoEl = ref(null)
 const hlsError = ref('')
-const mjpegSrc = ref(`${mjpegSnapUrl}?t=0`)
+const mjpegSrc = ref('')
 let hlsPlayer = null
 let mjpegTimer = null
 
@@ -82,49 +90,47 @@ let es = null
 
 function onMjpegImgError() {
     if (streamMode.value !== 'mjpeg') return
-    hlsError.value = `MJPEG 无法加载（${mjpegSnapUrl}）。若刚启动请稍等；并确认 RTSP_RELAY_ENABLED、ffmpeg 与 RTSP 地址。`
+    hlsError.value = `MJPEG 无法加载（${mjpegSnapUrl.value}）。若刚启动请稍等；并确认 RTSP_RELAY_ENABLED、ffmpeg 与 RTSP。`
 }
 
 function startMjpegPoll() {
     clearInterval(mjpegTimer)
     hlsError.value = ''
     const tick = () => {
-        mjpegSrc.value = `${mjpegSnapUrl}?t=${Date.now()}`
+        const base = mjpegSnapUrl.value
+        if (!base) return
+        mjpegSrc.value = `${base}?t=${Date.now()}`
     }
     tick()
     mjpegTimer = setInterval(tick, 120)
 }
 
+/** SSE 与 MQTT 一致：`温度,湿度,光电` */
 function tryParseMeasure(text) {
     rawPayload.value = text
     parseError.value = ''
-    try {
-        const o = JSON.parse(text)
-        if (
-            typeof o.temperature === 'number' &&
-            typeof o.humidity === 'number' &&
-            typeof o.photoelectric === 'number'
-        ) {
-            sample.value = {
-                temperature: o.temperature,
-                humidity: o.humidity,
-                photoelectric: o.photoelectric,
-            }
-        } else {
-            parseError.value =
-                'JSON 字段不完整（需要 temperature / humidity / photoelectric 数字）'
-            sample.value = null
-        }
-    } catch {
-        parseError.value = '不是合法 JSON'
+    const parts = text.trim().split(',').map((s) => s.trim())
+    if (parts.length !== 3) {
+        parseError.value = '需要三列 CSV：温度,湿度,光电'
         sample.value = null
+        return
     }
+    const t = Number(parts[0])
+    const h = Number(parts[1])
+    const p = Number(parts[2])
+    if (![t, h, p].every((n) => Number.isFinite(n))) {
+        parseError.value = '三列须为数字'
+        sample.value = null
+        return
+    }
+    sample.value = { temperature: t, humidity: h, photoelectric: p }
 }
 
 function setupHls() {
     hlsError.value = ''
     const video = hlsVideoEl.value
-    if (!video) return
+    const src = hlsUrl.value
+    if (!video || !src) return
 
     if (Hls.isSupported()) {
         streamMode.value = 'hls'
@@ -132,22 +138,34 @@ function setupHls() {
             enableWorker: true,
             lowLatencyMode: true,
         })
-        hlsPlayer.loadSource(hlsUrl)
+        hlsPlayer.loadSource(src)
         hlsPlayer.attachMedia(video)
         hlsPlayer.on(Hls.Events.ERROR, (_, data) => {
             if (data.fatal) {
-                hlsError.value = `[HLS] ${data.type} ${data.details || ''}（确认 ffmpeg 已启动且 ${hlsUrl} 可访问）`
+                hlsError.value = `[HLS] ${data.type} ${data.details || ''}（确认 ffmpeg 已写 ${src}）`
             }
         })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         streamMode.value = 'hls'
-        video.src = hlsUrl
+        video.src = src
     } else {
         streamMode.value = 'mjpeg'
     }
 }
 
-onMounted(() => {
+onMounted(async () => {
+    tauriEnv.value = isTauri()
+    if (tauriEnv.value) {
+        try {
+            const paths = await invoke('media_asset_paths')
+            hlsUrl.value = convertFileSrc(paths.hls_index)
+            mjpegSnapUrl.value = convertFileSrc(paths.mjpeg_last)
+            mjpegSrc.value = `${mjpegSnapUrl.value}?t=0`
+        } catch (e) {
+            hlsError.value = `无法取得媒体路径: ${e}`
+        }
+    }
+
     es = new EventSource(sseUrl)
     es.onmessage = (ev) => {
         sseError.value = ''
@@ -157,12 +175,13 @@ onMounted(() => {
         sseError.value = `SSE 连接失败或已断开（${sseUrl}）`
     }
 
-    nextTick(() => {
+    await nextTick()
+    if (tauriEnv.value) {
         setupHls()
         if (streamMode.value === 'mjpeg') {
             startMjpegPoll()
         }
-    })
+    }
 })
 
 onUnmounted(() => {
@@ -181,22 +200,14 @@ onUnmounted(() => {
     border: 1px solid #ddd;
     border-radius: 8px;
 }
-.hint {
-    font-size: 0.9em;
-    color: #555;
-}
 .err {
     color: #c00;
 }
-.raw,
-.url {
+.raw {
     opacity: 0.85;
     font-size: 0.85em;
     white-space: pre-wrap;
     word-break: break-all;
-}
-.mono {
-    font-family: ui-monospace, monospace;
 }
 .hls-video {
     width: 100%;

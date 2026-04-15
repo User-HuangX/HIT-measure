@@ -1,18 +1,21 @@
-//! RTSP → 共享 JPEG 缓冲，供无 MSE 的 WebView 通过 `GET /mjpeg/last.jpg` 定时刷新预览。
-//! WebKitGTK 对 `multipart/x-mixed-replace` 的 `<img>` 支持不可靠，故不用长连接 multipart。
+//! RTSP → `var/stream/last.jpg`，供前端通过 Tauri Asset Protocol（`convertFileSrc`）轮询预览。
+//! 不再提供 HTTP 拉流。
 
 use crate::env::CONFIG;
-use axum::body::Body;
-use axum::http::header;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use std::io::{self, ErrorKind};
+use std::path::PathBuf;
 use std::sync::Once;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
-use tokio::sync::RwLock;
-use once_cell::sync::Lazy;
+
+pub fn stream_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("var/stream")
+}
+
+pub fn last_jpeg_path() -> PathBuf {
+    stream_root().join("last.jpg")
+}
 
 fn find_jpeg_soi(buf: &[u8]) -> Option<usize> {
     buf.windows(2).position(|w| w == [0xFF, 0xD8])
@@ -69,10 +72,9 @@ async fn read_next_jpeg<R: tokio::io::AsyncRead + Unpin>(
     }
 }
 
-static LATEST_JPEG: Lazy<RwLock<Vec<u8>>> = Lazy::new(|| RwLock::new(Vec::new()));
 static FEED_ONCE: Once = Once::new();
 
-fn start_mjpeg_feed() {
+pub fn start_mjpeg_feed() {
     FEED_ONCE.call_once(|| {
         tokio::spawn(mjpeg_ffmpeg_loop());
     });
@@ -82,6 +84,12 @@ async fn mjpeg_ffmpeg_loop() {
     if !CONFIG.rtsp_relay_enabled {
         return;
     }
+    let path = last_jpeg_path();
+    if let Err(e) = tokio::fs::create_dir_all(stream_root()).await {
+        log::error!("create stream dir {:?}: {}", stream_root(), e);
+        return;
+    }
+
     let source = CONFIG.rtsp_relay_source.clone();
     loop {
         let mut cmd = Command::new("ffmpeg");
@@ -126,8 +134,9 @@ async fn mjpeg_ffmpeg_loop() {
         loop {
             match read_next_jpeg(&mut stdout, &mut buf).await {
                 Ok(Some(frame)) => {
-                    let mut w = LATEST_JPEG.write().await;
-                    *w = frame;
+                    if let Err(e) = tokio::fs::write(&path, &frame).await {
+                        log::warn!("write {:?}: {}", path, e);
+                    }
                 }
                 Ok(None) => {
                     log::warn!("mjpeg ffmpeg stdout closed; restarting");
@@ -141,32 +150,4 @@ async fn mjpeg_ffmpeg_loop() {
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-}
-
-pub async fn mjpeg_last_jpeg() -> impl IntoResponse {
-    if !CONFIG.rtsp_relay_enabled {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "RTSP relay disabled (set RTSP_RELAY_ENABLED=true)",
-        )
-            .into_response();
-    }
-
-    start_mjpeg_feed();
-
-    let bytes = LATEST_JPEG.read().await.clone();
-    if bytes.is_empty() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "MJPEG warming up (wait for ffmpeg / first frame)",
-        )
-            .into_response();
-    }
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "image/jpeg")
-        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .body(Body::from(bytes))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
