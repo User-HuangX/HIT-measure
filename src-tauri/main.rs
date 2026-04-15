@@ -1,3 +1,4 @@
+mod dto;
 mod remote;
 
 #[tokio::main]

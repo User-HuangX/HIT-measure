@@ -3301,8 +3301,10 @@ name = "measure"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "axum 0.7.9",
  "chrono",
  "crc32fast",
+ "log",
  "once_cell",
  "pretty_env_logger",
  "rmp-serde",
@@ -3314,6 +3316,9 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tokio",
+ "tokio-stream",
+ "tower 0.5.3",
+ "tower-http 0.5.2",
  "urlencoding",
  "xiu",
 ]
@@ -4670,7 +4675,7 @@ dependencies = [
  "tokio",
  "tokio-util 0.7.18",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.8",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -6562,6 +6567,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util 0.7.18",
 ]
 
 [[package]]
@@ -6735,6 +6741,22 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e9cd434a998747dd2c4276bc96ee2e0c7a2eadf3cae88e52be55a05fa9053f5"
+dependencies = [
+ "bitflags 2.11.0",
+ "bytes",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "pin-project-lite",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]

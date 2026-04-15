@@ -13,7 +13,14 @@ tauri-plugin-shell = "2"
 serde = { version = "1.0", features = ["derive"] }  #序列化/反序列化核心框架，启用 #[derive(Serialize, Deserialize)]
 serde_json = "1.0"  #JSON 格式的序列化/反序列化
 
+# 本地 SSE（推送到前端）
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
 # 日志
+log = "0.4"
 pretty_env_logger = "0.4"
 
 # 异步运行时，相当于Java的CompletableFuture
