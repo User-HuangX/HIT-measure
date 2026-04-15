@@ -2,3 +2,5 @@ node_modules
 target
 dist
 gen/schemas
+Cargo.lock
+package-lock.json
