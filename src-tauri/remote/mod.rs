@@ -16,6 +16,7 @@ pub async fn run_mqtt(app: AppHandle) {
         log::error!("mqtt subscribe {}: {:?}", topic, e);
         return;
     }
+    log::info!("mqtt subscribed topic={}", topic);
 
     loop {
         match connection.poll().await {

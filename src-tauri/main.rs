@@ -35,6 +35,10 @@ async fn main() {
             } else if env::CONFIG.rtsp_relay_enabled {
                 log::warn!("RTSP_RELAY_ENABLED 但 RTSP_RELAY_SOURCE 为空，已跳过预览拉流");
             }
+            let mqtt_handle = handle.clone();
+            tokio::spawn(async move {
+                remote::run_mqtt(mqtt_handle).await;
+            });
             tokio::spawn(async move {
                 match db::init_pool().await {
                     Ok(pool) => {
@@ -42,7 +46,6 @@ async fn main() {
                     }
                     Err(e) => log::error!("postgres: {}", e),
                 }
-                remote::run_mqtt(handle).await;
             });
             Ok(())
         })
