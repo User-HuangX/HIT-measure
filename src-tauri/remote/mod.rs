@@ -10,23 +10,25 @@ use tauri::AppHandle;
 pub async fn run_mqtt(app: AppHandle) {
     let mqttoptions = mqtt_config::get_mqtt();
     let (client, mut connection) = AsyncClient::new(mqttoptions, 10);
-
     let topic = CONFIG.mqtt_measure_topic.clone();
-    if let Err(e) = client.subscribe(topic.clone(), QoS::AtMostOnce).await {
-        log::error!("mqtt subscribe {}: {:?}", topic, e);
-        return;
-    }
-    log::info!("mqtt subscribed topic={}", topic);
 
     loop {
         match connection.poll().await {
             Ok(notification) => {
+                if let Event::Incoming(Packet::ConnAck(_)) = notification {
+                    log::info!("mqtt connected, subscribing to {}", topic);
+                    if let Err(e) = client.subscribe(&topic, QoS::AtMostOnce).await {
+                        log::error!("mqtt subscribe {}: {:?}", topic, e);
+                    } else {
+                        log::info!("mqtt subscribed topic={}", topic);
+                    }
+                }
                 if let Event::Incoming(Packet::Publish(publish)) = notification {
                     data::emit_measure_from_mqtt(&app, &publish.payload).await;
                 }
             }
             Err(e) => {
-                log::warn!("mqtt connection: {:?}", e);
+                log::warn!("mqtt connection error: {:?}, reconnecting...", e);
                 tokio::time::sleep(StdDuration::from_secs(1)).await;
             }
         }

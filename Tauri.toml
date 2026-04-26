@@ -1,13 +1,13 @@
-product-name = "HIT-measure"  # 应用显示名称
+productName = "HIT-measure"  # 应用显示名称
 version = "0.0.1"               # 应用版本号
 identifier = "com.tableandtable.app"  # 应用唯一标识符（macOS bundle ID / Android package name）
 
 [build]
 # 与 `.env` 的 `DEV_SERVER_PORT` 一致；改端口请同步此处或只用 `npm run tauri:dev`
-dev-url = "http://localhost:5180"
-before-dev-command = "npm run dev"  # 开发模式前执行的命令（启动 Vite）
-frontend-dist = "./dist"   # 前端构建输出目录
-before-build-command = "npm run build"  # 生产构建前执行的命令
+devUrl = "http://localhost:5180"
+beforeDevCommand = "npm run dev"  # 开发模式前执行的命令（启动 Vite）
+frontendDist = "./dist"   # 前端构建输出目录
+beforeBuildCommand = "npm run build"  # 生产构建前执行的命令
 
 
 [bundle]
@@ -16,8 +16,8 @@ targets = "all"    # 打包所有平台格式（deb, AppImage, dmg, exe 等）
 
 # MJPEG 预览走 Asset；开发保留 Vite ws
 [app.security]
-asset-protocol = { enable = true, scope = ["**"] }
-dev-csp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://localhost:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
+assetProtocol = { enable = true, scope = ["**"] }
+devCsp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://localhost:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
 csp = "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
 
 [[app.windows]]
