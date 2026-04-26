@@ -1,34 +1,34 @@
-//! 在线 RTSP → 本机 ffmpeg → `var/stream/last.jpg`，前端用 Asset Protocol 轮询预览。
+//! 在线 RTSP → 本机 ffmpeg → `var/stream/<drone_name>.jpg`，前端用 Asset Protocol 轮询预览。
 
-use crate::env::CONFIG;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
-use std::sync::Once;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
-pub fn stream_root() -> PathBuf {
+fn stream_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("var/stream")
 }
 
-pub fn last_jpeg_path() -> PathBuf {
-    stream_root().join("last.jpg")
+pub fn last_jpeg_path(drone_name: &str) -> PathBuf {
+    stream_root().join(format!("{}.jpg", drone_name))
 }
 
 /// 编译时嵌入的 2×2 灰块 JPEG；在 ffmpeg 写出首帧前写入磁盘，避免 Asset Protocol 报「文件不存在」。
 const LAST_PLACEHOLDER_JPEG: &[u8] = include_bytes!("assets/last_placeholder.jpg");
 
-/// 确保 `var/stream/last.jpg` 存在（尚无视频帧时为占位图）。
-pub fn ensure_last_jpeg_placeholder() {
-    if let Err(e) = try_ensure_last_jpeg_placeholder() {
-        log::warn!("ensure last.jpg placeholder: {}", e);
+pub fn ensure_last_jpeg_placeholder(drone_name: &str) {
+    if let Err(e) = try_ensure_last_jpeg_placeholder(drone_name) {
+        log::warn!("ensure {}.jpg placeholder: {}", drone_name, e);
     }
 }
 
-fn try_ensure_last_jpeg_placeholder() -> std::io::Result<()> {
+fn try_ensure_last_jpeg_placeholder(drone_name: &str) -> std::io::Result<()> {
     std::fs::create_dir_all(stream_root())?;
-    let path = last_jpeg_path();
+    let path = last_jpeg_path(drone_name);
     if std::fs::metadata(&path).is_err() {
         std::fs::write(&path, LAST_PLACEHOLDER_JPEG)?;
     }
@@ -90,27 +90,65 @@ async fn read_next_jpeg<R: tokio::io::AsyncRead + Unpin>(
     }
 }
 
-static FEED_ONCE: Once = Once::new();
-
-pub fn start_mjpeg_feed() {
-    FEED_ONCE.call_once(|| {
-        ensure_last_jpeg_placeholder();
-        tokio::spawn(mjpeg_ffmpeg_loop());
-    });
+pub struct MjpegFeedManager {
+    tasks: Arc<Mutex<std::collections::HashMap<String, CancellationToken>>>,
 }
 
-async fn mjpeg_ffmpeg_loop() {
-    if !CONFIG.rtsp_relay_enabled {
+impl MjpegFeedManager {
+    pub fn new() -> Self {
+        Self {
+            tasks: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub async fn start_feed(&self, drone_name: String, rtsp_url: String) {
+        let mut tasks = self.tasks.lock().await;
+        // 如果已经在运行，先停止
+        if let Some(cancel) = tasks.remove(&drone_name) {
+            cancel.cancel();
+        }
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let tasks_clone = self.tasks.clone();
+
+        tasks.insert(drone_name.clone(), cancel);
+
+        tokio::spawn(async move {
+            mjpeg_ffmpeg_loop(&drone_name, &rtsp_url, &cancel_clone).await;
+            // 结束后从 map 中移除
+            tasks_clone.lock().await.remove(&drone_name);
+        });
+    }
+
+    pub async fn stop_feed(&self, drone_name: &str) {
+        let mut tasks = self.tasks.lock().await;
+        if let Some(cancel) = tasks.remove(drone_name) {
+            cancel.cancel();
+        }
+    }
+}
+
+async fn mjpeg_ffmpeg_loop(drone_name: &str, source: &str, cancel: &CancellationToken) {
+    if source.is_empty() {
+        log::info!("mjpeg[{}]: RTSP URL is empty, skipping", drone_name);
         return;
     }
-    let path = last_jpeg_path();
+    log::info!("mjpeg[{}]: starting RTSP relay from {}", drone_name, source);
+    let path = last_jpeg_path(drone_name);
     if let Err(e) = tokio::fs::create_dir_all(stream_root()).await {
-        log::error!("create stream dir {:?}: {}", stream_root(), e);
+        log::error!("mjpeg[{}]: create stream dir: {}", drone_name, e);
         return;
     }
 
-    let source = CONFIG.rtsp_relay_source.clone();
+    ensure_last_jpeg_placeholder(drone_name);
+
+    let mut frame_count: u64 = 0;
     loop {
+        if cancel.is_cancelled() {
+            log::info!("mjpeg[{}]: feed cancelled", drone_name);
+            return;
+        }
+        log::info!("mjpeg[{}]: spawning ffmpeg", drone_name);
         let mut cmd = Command::new("ffmpeg");
         cmd.kill_on_drop(true)
             .stdin(std::process::Stdio::null())
@@ -120,7 +158,7 @@ async fn mjpeg_ffmpeg_loop() {
             .arg("-rtsp_transport")
             .arg("tcp")
             .arg("-i")
-            .arg(&source)
+            .arg(source)
             .arg("-an")
             .arg("-vf")
             .arg("fps=12")
@@ -135,8 +173,11 @@ async fn mjpeg_ffmpeg_loop() {
         let mut child = match cmd.stdout(std::process::Stdio::piped()).spawn() {
             Ok(c) => c,
             Err(e) => {
-                log::error!("mjpeg ffmpeg spawn: {} (is ffmpeg installed?)", e);
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                log::error!("mjpeg[{}]: ffmpeg spawn: {}", drone_name, e);
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                    _ = cancel.cancelled() => return,
+                }
                 continue;
             }
         };
@@ -144,29 +185,51 @@ async fn mjpeg_ffmpeg_loop() {
         let mut stdout = match child.stdout.take() {
             Some(s) => s,
             None => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                    _ = cancel.cancelled() => return,
+                }
                 continue;
             }
         };
 
         let mut buf = Vec::new();
         loop {
-            match read_next_jpeg(&mut stdout, &mut buf).await {
-                Ok(Some(frame)) => {
-                    if let Err(e) = tokio::fs::write(&path, &frame).await {
-                        log::warn!("write {:?}: {}", path, e);
+            if cancel.is_cancelled() {
+                log::info!("mjpeg[{}]: feed cancelled during read", drone_name);
+                return;
+            }
+            tokio::select! {
+                result = read_next_jpeg(&mut stdout, &mut buf) => {
+                    match result {
+                        Ok(Some(frame)) => {
+                            frame_count += 1;
+                            if frame_count <= 3 {
+                                log::info!("mjpeg[{}]: frame #{} received ({} bytes)", drone_name, frame_count, frame.len());
+                            }
+                            if let Err(e) = tokio::fs::write(&path, &frame).await {
+                                log::warn!("mjpeg[{}]: write {:?}: {}", drone_name, path, e);
+                            }
+                        }
+                        Ok(None) => {
+                            log::warn!("mjpeg[{}]: ffmpeg stdout closed after {} frames; restarting", drone_name, frame_count);
+                            break;
+                        }
+                        Err(e) => {
+                            log::warn!("mjpeg[{}]: frame read: {}", drone_name, e);
+                            break;
+                        }
                     }
                 }
-                Ok(None) => {
-                    log::warn!("mjpeg ffmpeg stdout closed; restarting");
-                    break;
-                }
-                Err(e) => {
-                    log::warn!("mjpeg frame read: {}", e);
-                    break;
+                _ = cancel.cancelled() => {
+                    log::info!("mjpeg[{}]: feed cancelled during read", drone_name);
+                    return;
                 }
             }
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+            _ = cancel.cancelled() => return,
+        }
     }
 }

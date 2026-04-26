@@ -8,16 +8,21 @@
         "preview": "vite preview",
         "tauri": "tauri",
         "tauri:dev": "node scripts/tauri-dev.mjs dev",
-        "test:mqtt": "bash scripts/test-mqtt-publish.sh"
+        "test:mqtt": "bash scripts/test-mqtt-publish.sh",
+        "tauri:build:win": "npx tauri build --target x86_64-pc-windows-gnu"
     },
     "dependencies": {
         "@tauri-apps/api": "^2.10.1",
         "@tauri-apps/cli": "^2.10.1",
+        "@vueuse/core": "^14.2.1",
+        "lucide-vue-next": "^1.0.0",
+        "tailwindcss": "^4.2.4",
         "vue": "^3.4.0"
     },
     "devDependencies": {
         "@babel/core": "^7.29.0",
         "@babel/preset-env": "^7.29.2",
+        "@tailwindcss/vite": "^4.2.4",
         "@vitejs/plugin-vue": "^5.0.0",
         "vite": "^5.0.0",
         "whatwg-fetch": "^3.6.20"

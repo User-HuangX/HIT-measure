@@ -12,7 +12,15 @@ beforeBuildCommand = "npm run build"  # 生产构建前执行的命令
 
 [bundle]
 active = true      # 启用打包功能
-targets = "all"    # 打包所有平台格式（deb, AppImage, dmg, exe 等）
+# 本地交叉编译时只用 nsis；CI 可按平台覆盖此值
+targets = ["nsis"]
+
+[bundle.windows.nsis]
+installerIcon = "icons/icon.ico"
+
+# 安装器自动下载并安装 WebView2 Runtime
+[bundle.windows.webviewInstallMode]
+type = "downloadBootstrapper"
 
 # MJPEG 预览走 Asset；开发保留 Vite ws
 [app.security]
@@ -21,10 +29,12 @@ devCsp = "default-src 'self'; connect-src ipc: http://ipc.localhost http://local
 csp = "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:;"
 
 [[app.windows]]
-title = "HIT-measure"  # 窗口标题
-width = 1400        # 初始宽度（像素）
-height = 900        # 初始高度（像素）
-minWidth = 1200     # 最小宽度
-minHeight = 700     # 最小高度
-resizable = true    # 允许调整大小
-fullscreen = false  # 不默认全屏
+title = "HIT-measure"
+width = 1600
+height = 900
+minWidth = 1400
+minHeight = 700
+resizable = true
+fullscreen = false
+decorations = false
+transparent = true

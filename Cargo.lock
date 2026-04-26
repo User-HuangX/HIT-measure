@@ -2106,10 +2106,12 @@ dependencies = [
  "pretty_env_logger",
  "rumqttc",
  "serde",
+ "serde_json",
  "sqlx",
  "tauri",
  "tauri-build",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4615,6 +4617,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
